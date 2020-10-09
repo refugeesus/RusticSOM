@@ -269,7 +269,7 @@ impl SOM {
     }
 
     // Trains the SOM by picking random data points as inputs from the dataset
-    pub fn train_random_supervised(&mut self, data: Array2<f64>, class_data: Array2<String>, iterations: u32) {
+    pub fn train_random_supervised(&mut self, data: Array2<f64>, class_data: Array1<String>, iterations: u32) {
         let mut random_value: i32;
         let mut temp1: Array1<f64>;
         let mut class_temp1: Array1<String>;
@@ -283,7 +283,7 @@ impl SOM {
             random_value = rand::thread_rng().gen_range(0, ndarray::ArrayBase::dim(&data).0 as i32);
             for i in 0..ndarray::ArrayBase::dim(&data).1 {
                 temp1[i] = data[[random_value as usize, i]];
-                class_temp1[i] = class_data[[random_value as usize, i]].to_owned();
+                class_temp1[i] = class_data[random_value as usize + self.data.y*i].to_owned();
                 temp2[i] = data[[random_value as usize, i]];
             }
             let (win, win_class) = self.winner(temp1, Some(class_temp1));
@@ -310,16 +310,14 @@ impl SOM {
         }
     }
 
-    fn cal_class_weights(&mut self, class_data: &Array2<String>) {
+    fn cal_class_weights(&mut self, class_data: &Array1<String>) {
         let num_classes = self.data.classes.keys().count();
         let len_data = class_data.len();
         for (c, w) in self.data.classes.iter_mut() {
             let mut temp = 0.0;
-            for i in 0..self.data.x {
-                for j in 0..self.data.y {
-                    if class_data[[i, j]] == c.as_str() {
-                        temp += 1.0;
-                    }
+            for i in 0..self.data.x*self.data.y {
+                if class_data[i] == c.as_str() {
+                    temp += 1.0;
                 }
             }
             let weight = (len_data as f64)/(num_classes as f64 * temp);
