@@ -2,7 +2,7 @@
 ///
 ///
 pub fn exponential_decay(val: f64, iter: u32, max_iter: u32) -> f64 {
-    println!("{:?}", ((- (iter as f64)/max_iter as f64)).exp());
+    //println!("{:?}", ((- (iter as f64)/max_iter as f64)).exp());
     let ex = ((- (iter as f64)/max_iter as f64)).exp();
     val*ex
 }
