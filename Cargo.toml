@@ -16,3 +16,7 @@ rand = "0.7"
 ndarray = { version = "0.13", features = ["serde-1"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+csv = "1.1"
+multimap = "0.8.2"
+stopwatch = "0.0.7"
+

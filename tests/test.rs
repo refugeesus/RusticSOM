@@ -7,7 +7,7 @@ use rusticsom::*;
 #[test]
 fn t_test_som() {
     let classes:Vec<String> = Vec::new();
-    let mut map = SOM::create(2, 3, 5, classes, None, Some(0.1), None, None, None);
+    let mut map = SOM::create(2, 3, 5, classes, false, None, Some(0.1), None, None, None);
 
     assert_eq!(map.winner(Array1::from(vec![0.5; 5]), None), ((0, 0), None));
 
@@ -23,14 +23,14 @@ fn t_test_som() {
 #[test]
 fn t_test_size() {
     let classes:Vec<String> = Vec::new();
-    let map = SOM::create(2, 3, 5, classes, Some((0.0, 1.0)), Some(0.1), None, None, None);
+    let map = SOM::create(2, 3, 5, classes, true, Some((0.0, 1.0)), Some(0.1), None, None, None);
     assert_eq!(map.get_size(), (2, 3));
 }
 
 #[test]
 fn t_distance_map() {
     let classes:Vec<String> = Vec::new();
-    let mut map = SOM::create(2, 3, 5, classes, Some((0.0, 1.0)), Some(0.1), None, None, None);
+    let mut map = SOM::create(2, 3, 5, classes, true, Some((0.0, 1.0)), Some(0.1), None, None, None);
     let mut temp_train = Array2::<f64>::zeros((2, 5));
     for i in temp_train.iter_mut() {
         *i = 1.0;
@@ -48,7 +48,7 @@ fn t_full_test() {
     // Run with `cargo test -- --nocapture` to get output!
     // Plotted with Matplotlib
     let classes:Vec<String> = Vec::new();
-    let mut map = SOM::create(10, 10, 4, classes, None, None, None, None, None);
+    let mut map = SOM::create(10, 10, 4, classes, false, None, None, None, None, None);
     let data = Array2::from(vec![
         [5.1, 3.5, 1.4, 0.2],
         [4.9, 3.0, 1.4, 0.2],
