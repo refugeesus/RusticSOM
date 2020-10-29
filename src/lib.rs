@@ -1,12 +1,14 @@
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 use rand::random;
 use rand::Rng;
+#[cfg(feature = "serde-1")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde-1", derive(Deserialize, Serialize))]
 pub struct SomData {
     x: usize,                                   // length of SOM
     y: usize,                                   // breadth of SOM
@@ -25,11 +27,12 @@ pub struct SomData {
 }
 
 /// A function for determining neighbours' weights.
-pub type NeighbourhoodFn = fn((usize, usize), (usize, usize), f32) -> Array2<f64>;
+pub type NeighbourhoodFn = fn((usize, usize), (usize, usize), f64) -> Array2<f64>;
 
 /// A function for decaying `learning_rate` and `sigma`.
 pub type DecayFn = fn(f32, u32, u32) -> f64;
 
+#[derive(Debug)]
 pub struct SOM {
     data: SomData,
     decay_fn: DecayFn,
@@ -94,11 +97,23 @@ impl SOM {
     //
     // TODO: (breaking-change) switch `elem` to `ArrayView1`. See todo
     //       for `Self::winner_dist()`.
-    pub fn winner(&mut self, sample: Array1<f64>) -> (usize, usize) {
-        let mut temp: Array1<f64> = Array1::<f64>::zeros(self.data.z);
+    pub fn winner(&mut self, sample: ArrayView1<f64>) -> (usize, usize) {
+        //let mut temp: Array1<f64> = Array1::<f64>::zeros(self.data.z);
         let mut min: f64 = std::f64::MAX;
         let mut ret: (usize, usize) = (0, 0);
 
+        for (i, row) in self.data.map.outer_iter().enumerate() {
+            for (j, entry) in row.outer_iter().enumerate() {
+                let distance = distance2(entry, sample);
+                if distance < min {
+                    min = distance;
+                    ret = (i, j);
+                }
+            }
+        }
+
+        self.data.activation_map[ret] += 1;
+        /*
         for i in 0..self.data.x {
             for j in 0..self.data.y {
                 for k in 0..self.data.z {
@@ -117,9 +132,10 @@ impl SOM {
         if let Some(elem) = self.data.activation_map.get_mut(ret) {
             *(elem) += 1;
         }
+        */
         ret
     }
-
+/*
     pub fn from_json(
         serialized: &str,
         decay_fn: Option<DecayFn>,
@@ -136,9 +152,9 @@ impl SOM {
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(&self.data)
     }
-
+*/
     // Update the weights of the SOM
-    fn update(&mut self, elem: Array1<f64>, winner: (usize, usize), iteration_index: u32) {
+    fn update(&mut self, elem: ArrayView1<f64>, winner: (usize, usize), iteration_index: u32) {
         let new_lr = (self.decay_fn)(
             self.data.learning_rate,
             iteration_index,
@@ -149,8 +165,7 @@ impl SOM {
             iteration_index,
             self.data.maximum_iterations,
         );
-        let g =
-            (self.neighbourhood_fn)((self.data.x, self.data.y), winner, new_sig as f32) * new_lr;
+        let g = (self.neighbourhood_fn)((self.data.x, self.data.y), winner, new_sig) * new_lr;
         /*
         let mut temp_map: Array3<f64> = Array3::ones((self.data.x, self.data.y, self.data.z));
         temp_map = temp_map.map(|x| x.dot(elem));
@@ -184,8 +199,7 @@ impl SOM {
             self.data.maximum_iterations,
         );
 
-        let g =
-            (self.neighbourhood_fn)((self.data.x, self.data.y), winner, new_sig as f32) * new_lr;
+        let g = (self.neighbourhood_fn)((self.data.x, self.data.y), winner, new_sig) * new_lr;
         let winner_weight = self
             .data
             .classes
@@ -210,8 +224,19 @@ impl SOM {
     }
 
     // Trains the SOM by picking random data points as inputs from the dataset
-    pub fn train_random(&mut self, data: Array2<f64>, iterations: u32) {
+    pub fn train_random(&mut self, data: ArrayView2<f64>, iterations: u32) {
         self.data.maximum_iterations = iterations;
+        let (rows, cols) = data.dim();
+        let rnd_row = || rand::thread_rng().gen_range(0, rows);
+        let mut randomized_col = Array1::<f64>::zeros(cols);
+        for iteration in 0..iterations {
+            for data_col in data.axis_iter(Axis(1)) {
+                ndarray::Zip::from(&mut randomized_col).apply(|rc_elem| *rc_elem = data_col[rnd_row()]);
+            }
+            let win = self.winner(randomized_col.view());
+            self.update(randomized_col.view(), win, iteration)
+        }
+        /*
         let mut random_value: i32;
         let mut temp1: Array1<f64>;
         let mut temp2: Array1<f64>;
@@ -230,18 +255,36 @@ impl SOM {
             let win = self.winner(temp1);
             self.update(temp3, win, iteration);
         }
+        */
     }
 
     // Trains the SOM by picking random data points as inputs from the dataset
     pub fn train_random_supervised(
         &mut self,
-        data: Array2<f64>,
-        class_data: Array1<String>,
+        data: ArrayView2<f64>,
+        class_data: ArrayView1<String>,
         iterations: u32,
     ) {
-        self.train_random(data.clone(), iterations);
+        self.train_random(data.view(), iterations);
+        self.initialize_classes(data.view(), class_data.view());
         self.data.maximum_iterations = iterations;
-        self.initialize_classes(data.clone(), class_data.clone());
+        let (rows, cols) = data.dim();
+        let rnd_row = || rand::thread_rng().gen_range(0, rows);
+        let mut randomized_sample = Array1::<f64>::zeros(cols);
+        if !self.data.custom_weighting {
+            self.cal_class_weights(class_data.view());
+        }
+        for iteration in 0..iterations {
+            let mut rnd_tmp: usize = 0;
+            for data_col in data.axis_iter(Axis(1)) {
+                rnd_tmp = rnd_row();
+                ndarray::Zip::from(&mut randomized_sample).apply(|rc_elem| *rc_elem = data_col[rnd_tmp]);
+            }
+            let win = self.winner(randomized_sample.view());
+            // TODO: Remove this clone!
+            self.update_supervised(class_data[rnd_tmp].clone(), win, iteration);
+        }
+/*
         let mut random_value: i32;
         let mut temp1: Array1<f64>;
         let mut ctemp1: String;
@@ -259,10 +302,11 @@ impl SOM {
             let win = self.winner(temp1);
             self.update_supervised(ctemp1, win, iteration);
         }
+*/
     }
 
     // Initialize classes of unsupervised learner by most wins decision rule
-    pub fn initialize_classes(&mut self, data: Array2<f64>, class_data: Array1<String>) {
+    pub fn initialize_classes(&mut self, data: ArrayView2<f64>, class_data: ArrayView1<String>) {
         self.data.activation_map = Array2::zeros((self.data.x, self.data.y));
         let mut temp_map: HashMap<String, usize> = HashMap::new();
         let mut n = 0;
@@ -273,7 +317,7 @@ impl SOM {
         n = 0;
         for x in data.genrows() {
             let y = x.to_owned();
-            let win = self.winner(y);
+            let win = self.winner(y.view());
             if let Some(res) = temp_map.get(&class_data[n]) {
                 self.data.tag_activation_map[[win.0, win.1, *res]] += 1;
             }
@@ -304,11 +348,29 @@ impl SOM {
     // Trains the SOM by picking random data points as inputs from the dataset
     pub fn train_random_hybrid(
         &mut self,
-        data: Array2<f64>,
-        class_data: Array1<String>,
+        data: ArrayView2<f64>,
+        class_data: ArrayView1<String>,
         iterations: u32,
     ) {
         self.data.maximum_iterations = iterations;
+        let (rows, cols) = data.dim();
+        let rnd_row = || rand::thread_rng().gen_range(0, rows);
+        let mut randomized_sample = Array1::<f64>::zeros(cols);
+        for iteration in 0..iterations {
+            let mut rnd_tmp: usize = 0;
+            for data_col in data.axis_iter(Axis(1)) {
+                rnd_tmp = rnd_row();
+                ndarray::Zip::from(&mut randomized_sample).apply(|rc_elem| *rc_elem = data_col[rnd_tmp]);
+            }
+            let win = self.winner(randomized_sample.view());
+            if class_data[rnd_tmp] != "undefined".to_string() {
+                // TODO: Remove this clone!
+                self.update_supervised(class_data[rnd_tmp].clone(), win, iteration);
+            } else {
+                self.update(randomized_sample.view(), win, iteration)
+            }
+        }
+/*
         let mut random_value: i32;
         let mut temp1: Array1<f64>;
         let mut ctemp1: String;
@@ -334,9 +396,17 @@ impl SOM {
                 self.update(temp2, win, iteration);
             }
         }
+*/
     }
     // Trains the SOM by picking  data points in batches (sequentially) as inputs from the dataset
-    pub fn train_batch(&mut self, data: Array2<f64>, iterations: u32) {
+    pub fn train_batch(&mut self, data: ArrayView2<f64>, iterations: u32) {
+        for iteration in 0..iterations {
+            let index = iteration as usize % (data.nrows() -1);
+            let col = data.index_axis(Axis(0), index);
+            let win = self.winner(col);
+            self.update(col, win, iteration);
+        }
+        /*
         let mut index: u32;
         let mut temp1: Array1<f64>;
         let mut temp2: Array1<f64>;
@@ -352,9 +422,10 @@ impl SOM {
             let win = self.winner(temp1);
             self.update(temp2, win, iteration);
         }
+        */
     }
 
-    fn cal_class_weights(&mut self, class_data: Array1<String>) {
+    fn cal_class_weights(&mut self, class_data: ArrayView1<String>) {
         let num_classes = self.data.classes.keys().count();
         let len_data = class_data.len();
         for (c, w) in self.data.classes.iter_mut() {
@@ -374,36 +445,35 @@ impl SOM {
     }
 
     // Update learning rate regulator (keep learning rate constant with increase in number of iterations)
-    fn update_regulate_lrate(&mut self, iterations: u32) {
-        self.data.regulate_lrate = iterations / 2;
-    }
+    //fn update_regulate_lrate(&mut self, iterations: u32) {
+    //    self.data.regulate_lrate = iterations / 2;
+    //}
 
     // Returns the activation map of the SOM, where each cell at (i, j) represents how many times the cell at (i, j) in the SOM was picked a winner neuron.
     pub fn activation_response(&self) -> ArrayView2<usize> {
         self.data.activation_map.view()
     }
 
-    // Similar to winner(), but also returns distance of input sample from winner neuron.
-    //
-    // TODO: (breaking-change) make `elem` an `ArrayView1` to remove
-    //       at least one heap allocation. Requires same change to
-    //       `Self::winner()`.
-    //
-    pub fn winner_dist(&mut self, elem: Array1<f64>) -> ((usize, usize), f64) {
-        // TODO: use more descriptive names than temp[..]
-        let tempelem = elem.clone();
-        let temp = self.winner(elem);
+    /// Returns a tuple of the winner and its distance from `elem`.
+    pub fn winner_dist(&mut self, elem: ArrayView1<f64>) -> ((usize, usize), f64) {
+        let winner = self.winner(elem);
+        let distance = euclid_dist(
+            self.data
+                .map
+                .index_axis(Axis(0), winner.0)
+                .index_axis(Axis(0), winner.1),
+            elem,
+        );
+        (winner, distance)
+    }
 
-        (
-            temp,
-            euclid_dist(
-                self.data
-                    .map
-                    .index_axis(Axis(0), temp.0)
-                    .index_axis(Axis(0), temp.1),
-                tempelem.view(),
-            ),
-        )
+    /// Returns values associated with winner node from map and tag_map
+    pub fn winner_vals(&mut self, elem: Array1<f64>) -> (((usize, usize), f64), String) {
+        // TODO: use more descriptive names than temp[..]
+        let temp = self.winner(elem.view());
+        self.data.tag_map.index_axis(Axis(0), temp.0).index_axis(Axis(0), temp.1);
+        // TODO: Get rid of this clone!
+        (self.winner_dist(elem.view()), self.data.tag_map[[temp.0, temp.1]].clone())
     }
 
     // Returns size of SOM.
@@ -454,6 +524,27 @@ impl SOM {
     }
 }
 
+#[cfg(feature = "serde-1")]
+impl SOM {
+    pub fn from_json(
+        serialized: &str,
+        decay_fn: Option<DecayFn>,
+        neighbourhood_fn: Option<NeighbourhoodFn>,
+    ) -> serde_json::Result<SOM> {
+        let data: SomData = serde_json::from_str(&serialized)?;
+
+        Ok(SOM {
+            data,
+            decay_fn: decay_fn.unwrap_or(default_decay_fn),
+            neighbourhood_fn: neighbourhood_fn.unwrap_or(gaussian),
+        })
+    }
+
+    pub fn to_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string_pretty(&self.data)
+    }
+}
+
 // To enable SOM objects to be printed with "print" and it's family of formatted string printing functions
 impl fmt::Display for SOM {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -474,8 +565,20 @@ impl fmt::Display for SOM {
 }
 
 // Returns the 2-norm of a vector represented as a 1D ArrayView
-pub fn distance(a: ArrayView1<f64>) -> f64 {
+fn distance(a: ArrayView1<f64>) -> f64 {
     a.iter().map(|elem| elem.powi(2)).sum::<f64>().sqrt()
+}
+
+fn distance2<'l, 'r, L, R>(lhs: L, rhs: R) -> f64
+where
+    L: IntoIterator<Item = &'l f64>,
+    R: IntoIterator<Item = &'r f64>,
+{
+    lhs.into_iter()
+        .zip(rhs.into_iter())
+        .map(|(l, r)| (l - r) * (l - r))
+        .sum::<f64>()
+        .sqrt()
 }
 
 // The default decay function for LR and Sigma
@@ -491,12 +594,12 @@ pub fn exponential_decay_fn(val: f32, curr_iter: u32, max_iter: u32) -> f64 {
 /// Default neighborhood function.
 ///
 /// Returns a two-dimensional Gaussian distribution centered at `pos`.
-pub fn gaussian(dims: (usize, usize), pos: (usize, usize), sigma: f32) -> Array2<f64> {
-    let div = 2.0 * PI * (sigma as f64).powi(2);
+pub fn gaussian(dims: (usize, usize), pos: (usize, usize), sigma: f64) -> Array2<f64> {
+    let div = 2.0 * PI * (sigma as f64) * (sigma as f64);
 
     let shape_fn = |(i, j)| {
-        let x = (-(((i as f64 - (pos.0 as f64)).powi(2)).sqrt() / div)).exp();
-        let y = (-(((j as f64 - (pos.1 as f64)).powi(2)).sqrt() / div)).exp();
+        let x = (-(((i as f64 - (pos.0 as f64)) * (i as f64 - (pos.0 as f64))).sqrt() / div)).exp();
+        let y = (-(((j as f64 - (pos.1 as f64)) * (j as f64 - (pos.1 as f64))).sqrt() / div)).exp();
         x * y
     };
 
@@ -507,13 +610,13 @@ pub fn gaussian(dims: (usize, usize), pos: (usize, usize), sigma: f32) -> Array2
 ///
 /// Returns a two-dimensional Gaussian distribution centered at `pos`.
 #[allow(unused)]
-pub fn mh_neighborhood(dims: (usize, usize), pos: (usize, usize), sigma: f32) -> Array2<f64> {
-    let div = 2.0 * PI * (sigma as f64).powi(2);
+pub fn mh_neighborhood(dims: (usize, usize), pos: (usize, usize), sigma: f64) -> Array2<f64> {
+    let div = 2.0 * PI * (sigma as f64) * (sigma as f64);
     let shape_fn = |(i, j)| {
-        let d = (((i as f64 - pos.0 as f64) + (j as f64 - pos.1 as f64)).powi(2)).sqrt();
-        let x = (-(((i as f64 - (pos.0 as f64)).powi(2)).sqrt() / div)).exp();
-        let y = (-(((j as f64 - (pos.1 as f64)).powi(2)).sqrt() / div)).exp();
-        (1.0 - (d.powi(2) as f64) / (sigma.powi(2) as f64)) * (x * y)
+        let d = (((i as f64 - pos.0 as f64) + (j as f64 - pos.1 as f64)) * ((i as f64 - pos.0 as f64) + (j as f64 - pos.1 as f64))).sqrt();
+        let x = (-(((i as f64 - (pos.0 as f64)) * (i as f64 - (pos.0 as f64))).sqrt() / div)).exp();
+        let y = (-(((j as f64 - (pos.1 as f64)) * (j as f64 - (pos.1 as f64))).sqrt() / div)).exp();
+        (1.0 - (d as f64) / (sigma*sigma as f64)) * (x * y)
     };
 
     Array2::from_shape_fn(dims, shape_fn)
@@ -550,8 +653,8 @@ mod tests {
             assert_eq!(map.get_map_cell((1, 1, k)), 1.5);
         }
 
-        assert_eq!(map.winner(Array1::from(vec![1.5; 5])), (1, 1));
-        assert_eq!(map.winner(Array1::from(vec![0.5; 5])), (0, 0));
+        assert_eq!(map.winner(ArrayView1::from(&vec![1.5; 5])), (1, 1));
+        assert_eq!(map.winner(ArrayView1::from(&vec![0.5; 5])), (0, 0));
     }
 
     #[test]

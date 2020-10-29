@@ -1,13 +1,15 @@
 use csv;
 use ndarray::{Array1, Array2};
 use rusticsom::SOM;
+#[cfg(feature = "derive")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use stopwatch::Stopwatch;
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Debug)]
+#[cfg_attr(feature = "derive", derive(Deserialize, Serialize))]
 struct TestSamples {
     pub pos: String,
     pub challengee: String,
@@ -18,7 +20,8 @@ struct TestSamples {
     pub label: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Debug)]
+#[cfg_attr(feature = "derive", derive(Deserialize, Serialize))]
 struct TestSamplesTag {
     pub pos: String,
     pub challengee: String,
@@ -98,7 +101,7 @@ fn test_unsupervised() -> Result<(), Box<dyn std::error::Error>> {
 
     // Unsupervised training of the SOM
     let sw = Stopwatch::start_new();
-    map.train_random(newdat, 1600);
+    map.train_random(newdat.view(), 1600);
     println!("TrainUnsupervised: {:?}", sw.elapsed());
 
     // Output relative distance map of SOM nodes
@@ -110,9 +113,9 @@ fn test_unsupervised() -> Result<(), Box<dyn std::error::Error>> {
     file.write_all(map.to_json()?.as_bytes())?;
 
     // Write out condensed winner list
-    for x in newdat2.genrows() {
+    for x in newdat.genrows() {
         let y = x.to_owned();
-        let _winner = map.winner(y);
+        let _winner = map.winner(y.view());
     }
 
     Ok(())
@@ -171,12 +174,11 @@ fn test_supervised() -> Result<(), Box<dyn std::error::Error>> {
         false,
     );
     let newdat = Array2::from(fmtdata);
-    let newdat2 = newdat.clone();
     let newlabel = Array1::from(fmtclass);
 
     // Run through supervised training method
     let sw = Stopwatch::start_new();
-    map.train_random_supervised(newdat, newlabel, 1600);
+    map.train_random_supervised(newdat.view(), newlabel.view(), 1600);
     println!("TrainSupervised: {:?}", sw.elapsed());
 
     let mut file = File::create("outputs/output_supervised.json")?;
@@ -185,9 +187,9 @@ fn test_supervised() -> Result<(), Box<dyn std::error::Error>> {
     let dist_map = map.distance_map();
     println!("{:?}", dist_map);
 
-    for x in newdat2.genrows() {
+    for x in newdat.genrows() {
         let y = x.to_owned();
-        let _winner = map.winner(y);
+        let _winner = map.winner(y.view());
     }
 
     Ok(())
