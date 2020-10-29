@@ -1,14 +1,12 @@
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 use rand::random;
 use rand::Rng;
-#[cfg(feature = "serde-1")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;
 
-#[derive(Debug)]
-#[cfg_attr(feature = "serde-1", derive(Deserialize, Serialize))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SomData {
     x: usize,                                   // length of SOM
     y: usize,                                   // breadth of SOM
@@ -511,21 +509,6 @@ impl SOM {
         dist_map
     }
 
-    // Unit testing functions for setting individual cell weights
-    #[cfg(test)]
-    pub fn set_map_cell(&mut self, (i, j, k): (usize, usize, usize), val: f64) {
-        self.data.map[[i, j, k]] = val;
-    }
-
-    // Unit testing functions for getting individual cell weights
-    #[cfg(test)]
-    pub fn get_map_cell(&self, (i, j, k): (usize, usize, usize)) -> f64 {
-        self.data.map[[i, j, k]]
-    }
-}
-
-#[cfg(feature = "serde-1")]
-impl SOM {
     pub fn from_json(
         serialized: &str,
         decay_fn: Option<DecayFn>,
@@ -542,6 +525,18 @@ impl SOM {
 
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(&self.data)
+    }
+
+    // Unit testing functions for setting individual cell weights
+    #[cfg(test)]
+    pub fn set_map_cell(&mut self, (i, j, k): (usize, usize, usize), val: f64) {
+        self.data.map[[i, j, k]] = val;
+    }
+
+    // Unit testing functions for getting individual cell weights
+    #[cfg(test)]
+    pub fn get_map_cell(&self, (i, j, k): (usize, usize, usize)) -> f64 {
+        self.data.map[[i, j, k]]
     }
 }
 

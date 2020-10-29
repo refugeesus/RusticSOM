@@ -1,22 +1,22 @@
 extern crate ndarray;
 extern crate rusticsom;
 
-use ndarray::{array, Array1, Array2};
+use ndarray::{array, ArrayView1, Array2};
 use rusticsom::*;
 
 #[test]
 fn t_test_som() {
     let mut map = SOM::create(2, 3, 5, false, Some(0.1), None, None, None, None, false);
 
-    assert_eq!(map.winner(Array1::from(vec![0.5; 5])), (0, 0));
+    assert_eq!(map.winner(ArrayView1::from(&vec![0.5; 5])), (0, 0));
 
     let mut temp_train = Array2::<f64>::zeros((2, 5));
     for i in temp_train.iter_mut() {
         *i = 1.0;
     }
 
-    map.train_batch(temp_train, 1);
-    assert_eq!(map.winner(Array1::from(vec![0.5; 5])), (0, 0));
+    map.train_batch(temp_train.view(), 1);
+    assert_eq!(map.winner(ArrayView1::from(&vec![0.5; 5])), (0, 0));
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn t_distance_map() {
         *i = 1.0;
     }
 
-    map.train_batch(temp_train, 1);
+    map.train_batch(temp_train.view(), 1);
     let dist = map.distance_map();
 
     assert_ne!(dist[[0, 0]], 0.0);
@@ -199,13 +199,13 @@ fn t_full_test() {
     ];
 
     let data2 = data.to_owned();
-    map.train_random(data, 1000);
+    map.train_random(data.view(), 1000);
 
     let dist_map = map.distance_map();
     println!("{:?}", dist_map);
 
     for x in data2.genrows() {
         let y = x.to_owned();
-        print!("{:?}, ", map.winner(y));
+        print!("{:?}, ", map.winner(y.view()));
     }
 }

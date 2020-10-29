@@ -163,14 +163,14 @@ fn t_full_test() {
     ];
 
     let data2 = data.to_owned();
-    map.train_random(data, 1000);
+    map.train_random(data.view(), 1000);
 
     let dist_map = map.distance_map();
     println!("{:?}", dist_map);
 
     for x in data2.genrows() {
         let y = x.to_owned();
-        print!("{:?}, ", map.winner(y));
+        print!("{:?}, ", map.winner(y.view()));
     }
 
     let json = map.to_json().unwrap();
@@ -180,8 +180,8 @@ fn t_full_test() {
     for x in data2.genrows() {
         let y1 = x.to_owned();
         let y2 = x.to_owned();
-        let r1 = map.winner(y1);
-        let r2 = map_imported.winner(y2);
+        let r1 = map.winner(y1.view());
+        let r2 = map_imported.winner(y2.view());
         assert_eq!(r1, r2);
     }
 }

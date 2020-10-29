@@ -1,15 +1,13 @@
 use csv;
 use ndarray::{Array1, Array2};
 use rusticsom::SOM;
-#[cfg(feature = "derive")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use stopwatch::Stopwatch;
 
-#[derive(Debug)]
-#[cfg_attr(feature = "derive", derive(Deserialize, Serialize))]
+#[derive(Debug, Serialize, Deserialize)]
 struct TestSamples {
     pub pos: String,
     pub challengee: String,
@@ -20,8 +18,7 @@ struct TestSamples {
     pub label: u32,
 }
 
-#[derive(Debug)]
-#[cfg_attr(feature = "derive", derive(Deserialize, Serialize))]
+#[derive(Debug, Serialize, Deserialize)]
 struct TestSamplesTag {
     pub pos: String,
     pub challengee: String,
@@ -97,7 +94,6 @@ fn test_unsupervised() -> Result<(), Box<dyn std::error::Error>> {
         false,
     );
     let newdat = Array2::from(fmtdata);
-    let newdat2 = newdat.clone();
 
     // Unsupervised training of the SOM
     let sw = Stopwatch::start_new();
