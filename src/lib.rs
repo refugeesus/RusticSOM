@@ -97,7 +97,7 @@ impl SOM {
     //
     // TODO: (breaking-change) switch `elem` to `ArrayView1`. See todo
     //       for `Self::winner_dist()`.
-    pub fn winner(&mut self, sample: ArrayView1<f64>) -> (usize, usize) {
+    pub fn winner(&self, sample: ArrayView1<f64>) -> (usize, usize) {
         //let mut temp: Array1<f64> = Array1::<f64>::zeros(self.data.z);
         let mut min: f64 = std::f64::MAX;
         let mut ret: (usize, usize) = (0, 0);
@@ -111,8 +111,6 @@ impl SOM {
                 }
             }
         }
-
-        self.data.activation_map[ret] += 1;
         /*
         for i in 0..self.data.x {
             for j in 0..self.data.y {
@@ -214,6 +212,7 @@ impl SOM {
                 ndarray::Zip::from(&mut randomized_col).apply(|rc_elem| *rc_elem = data_col[rnd_row()]);
             }
             let win = self.winner(randomized_col.view());
+            self.data.activation_map[win] += 1;
             self.update(randomized_col.view(), win, iteration)
         }
         /*
@@ -261,6 +260,7 @@ impl SOM {
                 ndarray::Zip::from(&mut randomized_sample).apply(|rc_elem| *rc_elem = data_col[rnd_tmp]);
             }
             let win = self.winner(randomized_sample.view());
+            self.data.activation_map[win] += 1;
             // TODO: Remove this clone!
             self.update_supervised(class_data[rnd_tmp].clone(), win, iteration);
         }
@@ -435,7 +435,7 @@ impl SOM {
     }
 
     /// Returns a tuple of the winner and its distance from `elem`.
-    pub fn winner_dist(&mut self, elem: ArrayView1<f64>) -> ((usize, usize), f64) {
+    pub fn winner_dist(&self, elem: ArrayView1<f64>) -> ((usize, usize), f64) {
         let winner = self.winner(elem);
         let distance = euclid_dist(
             self.data
