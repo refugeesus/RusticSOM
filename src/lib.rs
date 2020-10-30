@@ -1,12 +1,14 @@
 use ndarray::{Array1, Array2, Array3, ArrayView1, ArrayView2, Axis};
 use rand::random;
 use rand::Rng;
+#[cfg(feature = "serde-1")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde-1", derive(Deserialize, Serialize))]
 pub struct SomData {
     x: usize,                                   // length of SOM
     y: usize,                                   // breadth of SOM
@@ -133,24 +135,7 @@ impl SOM {
         */
         ret
     }
-/*
-    pub fn from_json(
-        serialized: &str,
-        decay_fn: Option<DecayFn>,
-        neighbourhood_fn: Option<NeighbourhoodFn>,
-    ) -> serde_json::Result<SOM> {
-        let data: SomData = serde_json::from_str(&serialized)?;
 
-        Ok(SOM {
-            data,
-            decay_fn: decay_fn.unwrap_or(default_decay_fn),
-            neighbourhood_fn: neighbourhood_fn.unwrap_or(gaussian),
-        })
-    }
-    pub fn to_json(&self) -> serde_json::Result<String> {
-        serde_json::to_string_pretty(&self.data)
-    }
-*/
     // Update the weights of the SOM
     fn update(&mut self, elem: ArrayView1<f64>, winner: (usize, usize), iteration_index: u32) {
         let new_lr = (self.decay_fn)(
@@ -164,17 +149,14 @@ impl SOM {
             self.data.maximum_iterations,
         );
         let g = (self.neighbourhood_fn)((self.data.x, self.data.y), winner, new_sig) * new_lr;
-        /*
-        let mut temp_map: Array3<f64> = Array3::ones((self.data.x, self.data.y, self.data.z));
-        temp_map = temp_map.map(|x| x.dot(elem));
-        self.data.map = self.data.map.clone() + (temp_map - self.data.map.clone()) * g;
-        */
+
         for i in 0..self.data.x {
             for j in 0..self.data.y {
                 for k in 0..self.data.z {
                     self.data.map[[i, j, k]] += (elem[[k]] - self.data.map[[i, j, k]]) * g[[i, j]];
                 }
 
+                // TODO: wtf is this doing?
                 let distance =
                     distance(self.data.map.index_axis(Axis(0), i).index_axis(Axis(0), j));
                 for k in 0..self.data.z {
@@ -509,6 +491,21 @@ impl SOM {
         dist_map
     }
 
+    // Unit testing functions for setting individual cell weights
+    #[cfg(test)]
+    pub fn set_map_cell(&mut self, (i, j, k): (usize, usize, usize), val: f64) {
+        self.data.map[[i, j, k]] = val;
+    }
+
+    // Unit testing functions for getting individual cell weights
+    #[cfg(test)]
+    pub fn get_map_cell(&self, (i, j, k): (usize, usize, usize)) -> f64 {
+        self.data.map[[i, j, k]]
+    }
+}
+
+#[cfg(feature = "serde-1")]
+impl SOM {
     pub fn from_json(
         serialized: &str,
         decay_fn: Option<DecayFn>,
@@ -526,20 +523,7 @@ impl SOM {
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string_pretty(&self.data)
     }
-
-    // Unit testing functions for setting individual cell weights
-    #[cfg(test)]
-    pub fn set_map_cell(&mut self, (i, j, k): (usize, usize, usize), val: f64) {
-        self.data.map[[i, j, k]] = val;
-    }
-
-    // Unit testing functions for getting individual cell weights
-    #[cfg(test)]
-    pub fn get_map_cell(&self, (i, j, k): (usize, usize, usize)) -> f64 {
-        self.data.map[[i, j, k]]
-    }
 }
-
 // To enable SOM objects to be printed with "print" and it's family of formatted string printing functions
 impl fmt::Display for SOM {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

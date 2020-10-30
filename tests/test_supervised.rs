@@ -35,7 +35,6 @@ fn normalize_sig(rssi: f64, snr: f64, fspl: f64) -> [f64; 3] {
     let sout = (snr - (-19.0)) / (17.0 - (-19.0));
     let fout = (fspl - (-164.0)) / (0.0 - (-164.0));
     [rout, sout, fout]
-    //[rssi, snr, fspl]
 }
 
 #[test]
