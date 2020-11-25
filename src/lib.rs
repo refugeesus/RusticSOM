@@ -8,6 +8,33 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::fmt;
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Classification {
+    label: String,
+    weight: f64,
+    global_weight: f64,
+}
+
+impl Classification {
+    pub fn new(label: String, weight: f64) -> Classification {
+        Classification {
+            label,
+            weight,
+            global_weight: 0.0,
+        }
+    }
+}
+
+impl Default for Classification {
+    fn default() -> Self {
+        Classification {
+            label: "undefined".to_string(),
+            weight: 0.0,
+            global_weight: 0.0,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SomData {
     x: usize,                                   // length of SOM
@@ -19,7 +46,7 @@ pub struct SomData {
     maximum_iterations: u32, // Maximum number of iterations per training session
     pub map: Array3<f64>,    // the SOM itself
     activation_map: Array2<usize>, // each cell represents how many times the corresponding cell in SOM was winner
-    pub tag_map: Array2<String>, // each cell contains the associated classification predicted by the SOM
+    pub tag_map: Array2<Classification>, // each cell contains the associated classification predicted by the SOM
     tag_activation_map: Array3<usize>, // each cell represents the how many times the corresponding tag was winner for a cell
     tag_activation_map_intermed: Array2<usize>, // Identical to tag activation map but preserving a copy between unsupervised and supervised learning
     classes: HashMap<String, f64>,              // X classes with Y associated weights
@@ -75,7 +102,7 @@ impl SOM {
             Array3::zeros((length, breadth, inputs))
         };
         let act_map = Array2::zeros((length, breadth));
-        let tag_map = Array2::from_elem((length, breadth), "undefined".to_string());
+        let tag_map = Array2::from_elem((length, breadth), Classification::default());
         let data = SomData {
             x: length,
             y: breadth,
@@ -173,7 +200,7 @@ impl SOM {
     }
 
     // Update the weights of the SOM
-    fn update_supervised(&mut self, elem: String, winner: (usize, usize), iteration_index: u32) {
+    fn update_supervised(&mut self, elem: Classification, winner: (usize, usize), iteration_index: u32) {
         let new_lr = (self.decay_fn)(
             self.data.learning_rate,
             iteration_index,
@@ -187,13 +214,7 @@ impl SOM {
 
         let g =
             (self.neighbourhood_fn)((self.data.x, self.data.y), winner, new_sig as f32) * new_lr;
-        let winner_weight = self
-            .data
-            .classes
-            .get(&self.data.tag_map[[winner.0, winner.1]])
-            .unwrap_or(&0.0)
-            .to_owned();
-
+        let winner_weight = self.data.tag_map[[winner.0, winner.1]].global_weight;
         let rand_matrix: Array2<f64> = match self.data.random_seed {
             Some(s) => {
                 let mut rng: StdRng = SeedableRng::from_seed(s);
@@ -260,7 +281,7 @@ impl SOM {
     pub fn train_random_supervised(
         &mut self,
         data: Array2<f64>,
-        class_data: Array1<String>,
+        class_data: Array1<Classification>,
         iterations: u32,
     ) {
         self.train_random(data.clone(), iterations);
@@ -268,7 +289,7 @@ impl SOM {
         self.initialize_classes(data.clone(), class_data.clone());
         let mut random_value: i32;
         let mut temp1: Array1<f64>;
-        let mut ctemp1: String;
+        let mut ctemp1: Classification;
         self.update_regulate_lrate(iterations);
         if !self.data.custom_weighting {
             self.cal_class_weights(class_data.clone());
@@ -300,7 +321,7 @@ impl SOM {
     }
 
     // Initialize classes of unsupervised learner by most wins decision rule
-    pub fn initialize_classes(&mut self, data: Array2<f64>, class_data: Array1<String>) {
+    pub fn initialize_classes(&mut self, data: Array2<f64>, class_data: Array1<Classification>) {
         self.data.activation_map = Array2::zeros((self.data.x, self.data.y));
         let mut temp_map: HashMap<String, usize> = HashMap::new();
         let mut n = 0;
@@ -315,7 +336,7 @@ impl SOM {
             if let Some(elem) = self.data.activation_map.get_mut(win) {
                 *(elem) += 1;
             }
-            if let Some(res) = temp_map.get(&class_data[n]) {
+            if let Some(res) = temp_map.get(&class_data[n].label) {
                 self.data.tag_activation_map[[win.0, win.1, *res]] += 1;
             }
             n += 1;
@@ -334,7 +355,8 @@ impl SOM {
                 }
                 for (k, v) in temp_map.iter() {
                     if v == &class {
-                        self.data.tag_map[[i, j]] = k.clone();
+                        self.data.tag_map[[i, j]].label = k.clone();
+                        self.data.tag_map[[i, j]].global_weight = self.data.classes.get(k).unwrap_or(&0.0).clone();
                     }
                 }
             }
@@ -342,17 +364,48 @@ impl SOM {
         self.data.tag_activation_map_intermed = self.data.activation_map.clone();
     }
 
+    // Trains the SOM given n input parameters post-training
+    pub fn evaluate_hybrid(
+        &mut self,
+        data: Array2<f64>,
+        class_data: Array1<Classification>,
+    ) {
+        let iterations = data.len_of(Axis(0));
+        let mut temp1: Array1<f64>;
+        let mut ctemp1: Classification;
+        let mut temp2: Array1<f64>;
+        if !self.data.custom_weighting {
+            self.cal_class_weights(class_data.clone());
+        }
+        for iteration in 0..iterations {
+            temp1 = Array1::<f64>::zeros(ndarray::ArrayBase::dim(&data).1);
+            temp2 = Array1::<f64>::zeros(ndarray::ArrayBase::dim(&data).1);
+            for i in 0..ndarray::ArrayBase::dim(&data).1 {
+                temp1[i] = data[[iteration, i]];
+                temp2[i] = data[[iteration, i]];
+            }
+            ctemp1 = class_data[iteration].clone();
+            if ctemp1.label != "undefined".to_string() {
+                let win = self.winner(temp1);
+                self.update_supervised(ctemp1, win, self.data.maximum_iterations);
+            } else {
+                let win = self.winner(temp1);
+                self.update(temp2, win, self.data.maximum_iterations);
+            }
+        }
+    }
+
     // Trains the SOM by picking random data points as inputs from the dataset
     pub fn train_random_hybrid(
         &mut self,
         data: Array2<f64>,
-        class_data: Array1<String>,
+        class_data: Array1<Classification>,
         iterations: u32,
     ) {
         self.data.maximum_iterations = iterations;
         let mut random_value: i32;
         let mut temp1: Array1<f64>;
-        let mut ctemp1: String;
+        let mut ctemp1: Classification;
         let mut temp2: Array1<f64>;
         if !self.data.custom_weighting {
             self.cal_class_weights(class_data.clone());
@@ -367,7 +420,7 @@ impl SOM {
                 temp2[i] = data[[random_value as usize, i]];
             }
             ctemp1 = class_data[random_value as usize].clone();
-            if ctemp1 != "undefined".to_string() {
+            if ctemp1.label != "undefined".to_string() {
                 let win = self.winner(temp1);
                 self.update_supervised(ctemp1, win, iteration);
             } else {
@@ -395,13 +448,13 @@ impl SOM {
         }
     }
 
-    fn cal_class_weights(&mut self, class_data: Array1<String>) {
+    fn cal_class_weights(&mut self, class_data: Array1<Classification>) {
         let num_classes = self.data.classes.keys().count();
         let len_data = class_data.len();
         for (c, w) in self.data.classes.iter_mut() {
             let mut temp = 0.0;
             for i in 0..class_data.dim() {
-                if class_data[i] == c.as_str() {
+                if class_data[i].label == c.as_str() {
                     temp += 1.0;
                 }
             }
@@ -453,7 +506,7 @@ impl SOM {
         let temp = self.winner(elem.clone());
         self.data.tag_map.index_axis(Axis(0), temp.0).index_axis(Axis(0), temp.1);
         // TODO: Get rid of this clone!
-        (self.winner_dist(elem), self.data.tag_map[[temp.0, temp.1]].clone())
+        (self.winner_dist(elem), self.data.tag_map[[temp.0, temp.1]].label.clone())
     }
     // Returns size of SOM.
     pub fn get_size(&self) -> (usize, usize) {
