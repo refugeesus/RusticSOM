@@ -81,17 +81,17 @@ r <- rep(seq(1, 20, by = 1), 20)
 
 pper <- foreach(i = iter(seq(1, 400, by = 1))) %do% {
   tr <- tagwins.real[[i]]
-  res <- tr / result_sup$tag_activation_map_intermed$data[i] * 100
+  res <- tr / result_sup$tag_activation_map$data[i] * 100
 }
 
 nper <- foreach(i = iter(seq(1, 400, by = 1))) %do% {
   tr <- tagwins.middleman[[i]]
-  res <- tr / result_sup$tag_activation_map_intermed$data[i] * 100
+  res <- tr / result_sup$tag_activation_map$data[i] * 100
 }
 
 mper <- foreach(i = iter(seq(1, 400, by = 1))) %do% {
   tr <- tagwins.middleman[[i]]
-  res <- tr / result_sup$tag_activation_map_intermed$data[i] * 100
+  res <- tr / result_sup$tag_activation_map$data[i] * 100
 }
 
 pper <- unlist(pper, recursive = FALSE)
@@ -112,7 +112,7 @@ results <- data.table(
                      tag.wins.real = tagwins.real,
                      tag.wins.fake = tagwins.fake,
                      activation.map = pper,
-                     total.wins = result_sup$tag_activation_map_intermed$data
+                     total.wins = result_sup$activation_map$data
 )
 
 results3 <- data.table(
@@ -122,7 +122,7 @@ results3 <- data.table(
                      tag.wins.real = tagwins.real,
                      tag.wins.fake = tagwins.fake,
                      activation.map = mper,
-                     total.wins = result_sup$tag_activation_map_intermed$data
+                     total.wins = result_sup$activation_map$data
 )
 
 hm10_usup <- function(res, name) {

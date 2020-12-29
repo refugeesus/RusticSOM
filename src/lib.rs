@@ -21,7 +21,6 @@ pub struct SomData {
     activation_map: Array2<usize>, // each cell represents how many times the corresponding cell in SOM was winner
     pub tag_map: Array2<String>, // each cell contains the associated classification predicted by the SOM
     tag_activation_map: Array3<usize>, // each cell represents the how many times the corresponding tag was winner for a cell
-    tag_activation_map_intermed: Array2<usize>, // Identical to tag activation map but preserving a copy between unsupervised and supervised learning
     classes: HashMap<String, f64>,              // X classes with Y associated weights
     custom_weighting: bool, // Flag to enable custom weighting of classes or automatically weight by class distribution in training set
     random_seed: Option<[u8; 32]>,
@@ -93,7 +92,6 @@ impl SOM {
                     Array3::zeros((length, breadth, 0))
                 }
             },
-            tag_activation_map_intermed: Array2::zeros((length, breadth)),
             classes: classes.unwrap_or(HashMap::new()),
             regulate_lrate: 0,
             custom_weighting: {
@@ -301,7 +299,7 @@ impl SOM {
 
     // Initialize classes of unsupervised learner by most wins decision rule
     pub fn initialize_classes(&mut self, data: Array2<f64>, class_data: Array1<String>) {
-        self.data.activation_map = Array2::zeros((self.data.x, self.data.y));
+        let mut temp_activation_map = Array2::<usize>::zeros((self.data.x, self.data.y));
         let mut temp_map: HashMap<String, usize> = HashMap::new();
         let mut n = 0;
         for (k, _v) in self.data.classes.iter() {
@@ -312,7 +310,7 @@ impl SOM {
         for x in data.genrows() {
             let y = x.to_owned();
             let win = self.winner(y);
-            if let Some(elem) = self.data.activation_map.get_mut(win) {
+            if let Some(elem) = temp_activation_map.get_mut(win) {
                 *(elem) += 1;
             }
             if let Some(res) = temp_map.get(&class_data[n]) {
@@ -326,7 +324,7 @@ impl SOM {
                 let mut class: usize = 9999;
                 for k in 0..self.data.classes.keys().count() {
                     let percentage = self.data.tag_activation_map[[i, j, k]] as f64
-                        / self.data.activation_map[[i, j]] as f64;
+                        / temp_activation_map[[i, j]] as f64;
                     if percentage > temp {
                         temp = percentage;
                         class = k;
@@ -339,7 +337,6 @@ impl SOM {
                 }
             }
         }
-        self.data.tag_activation_map_intermed = self.data.activation_map.clone();
     }
 
     // Trains the SOM by picking random data points as inputs from the dataset
@@ -422,6 +419,18 @@ impl SOM {
     // Returns the activation map of the SOM, where each cell at (i, j) represents how many times the cell at (i, j) in the SOM was picked a winner neuron.
     pub fn activation_response(&self) -> ArrayView2<usize> {
         self.data.activation_map.view()
+    }
+
+    pub fn cal_activation_response(&self, samples: Array1<f64>) -> Array2<usize> {
+        let mut activation_map = Array2::zeros((self.data.x, self.data.y));
+        for x in samples.genrows() {
+            let y = x.to_owned();
+            let win = self.winner(y);
+            if let Some(elem) = activation_map.get_mut(win) {
+                *(elem) += 1;
+            }
+        }
+        activation_map
     }
 
     // Similar to winner(), but also returns distance of input sample from winner neuron.
